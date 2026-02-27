@@ -1,2 +1,5 @@
 # fastplotlib-neuro-examples
-Examples of how fastplotlib can be used for systems neuroscience
+
+This repo contains examples of how fastplotlib can be used across a range of systems neuroscience analysis, including calcium imaging, behavior, and multi-electrode electrophysiology.
+
+WIP
