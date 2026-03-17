@@ -158,6 +158,8 @@ class ContoursManager:
         self._demixing_results = demixing_results
         self._subplots = subplots
 
+        self._contour_graphics: dict[masknmf.DemixingResults, fpl.ImageGraphic] = dict()
+
         if isinstance(demixing_results, masknmf.DemixingResults):
             contours, masks, centers = get_contours(self._demixing_results)
 
@@ -172,11 +174,15 @@ class ContoursManager:
             if len(subplots) != len(demixing_results):
                 raise IndexError
 
-            self._contours = dict.fromkeys(self._demixing_results)
-            self._masks = dict.fromkeys(self._demixing_results)
-            self._cetners = dict.fromkeys(self._demixing_results)
+            self._contours = dict()
+            self._masks = dict()
+            self._centers = dict()
 
             for dmr in demixing_results:
+                if dmr in self._contours.keys():
+                    # has already been done
+                    continue
+
                 contours, masks, centers = get_contours(dmr)
                 self._contours[dmr] = contours
                 self._masks[dmr] = masks
@@ -257,18 +263,23 @@ class ContoursManager:
             self._contour_graphics = {self._demixing_results: contours_graphic}
 
         else:
-            self._original_contours_textures = dict.fromkeys(self._demixing_results)
+            self._original_contours_textures = dict()
 
             for subplot, dmr in zip(self._subplots, self._demixing_results):
-                texture = texture_from_contours(
-                    contours=self._contours[dmr],
-                    fov_shape=dmr.fov_shape,
-                )
+                if dmr in self._original_contours_textures.keys():
+                    # share the buffer for the same DMR
+                    data = self._contour_graphics[dmr].data
+                else:
+                    # different DMR
+                    data = texture_from_contours(
+                        contours=self._contours[dmr],
+                        fov_shape=dmr.fov_shape,
+                    )
 
-                self._original_contours_textures[dmr] = texture
+                    self._original_contours_textures[dmr] = data
 
-                contours_graphic = fpl.ImageGraphic(
-                    texture,
+                contours_graphic = subplot.add_image(
+                    data,
                     vmin=0,  # makes it easier to set the colors of the contour highlights using vals between 0 - 1
                     vmax=1,
                     name="contours",
@@ -282,6 +293,9 @@ class ContoursManager:
                 contours_graphic.tooltip_format = partial(
                     self.tooltip_comp_index, dmr
                 )
+
+                if dmr not in self._contour_graphics.keys():
+                    self._contour_graphics[dmr] = contours_graphic
 
     def select_component(self, dmr: masknmf.DemixingResults, comp_index: int):
         if (dmr, comp_index) in self._selection:

@@ -23,27 +23,42 @@ dmr.to("cuda")
 
 fov_index = "00"
 
-imaging_timings_path = session_path.joinpath("001", "alf", f"FOV_{fov_index}", "mpci.times.npy")
+imaging_timings_path = session_path.joinpath(
+    "001", "alf", f"FOV_{fov_index}", "mpci.times.npy"
+)
 dmr.timings = np.load(imaging_timings_path)
 
-start_time = np.min([np.min(a) for a in [vid_left.timings, vid_right.timings, dmr.timings]])
-stop_time = np.min([np.max(a) for a in [vid_left.timings, vid_right.timings, dmr.timings]])
+start_time = np.min(
+    [np.min(a) for a in [vid_left.timings, vid_right.timings, dmr.timings]]
+)
+stop_time = np.min(
+    [np.max(a) for a in [vid_left.timings, vid_right.timings, dmr.timings]]
+)
 # 25 ms step size
 step = 25 / 1000
 
 ref_range = {"time": (start_time, stop_time, step)}
 
 extents = [
-    (0, 0.33, 0.0,  0.33), (0.33, 0.66, 0.0,  0.33), (0.66, 1, 0.0,  0.5),
-    (0, 0.33, 0.33, 0.66), (0.33, 0.66, 0.33, 0.66), (0.66, 1, 0.5,  1.0),
-    (0, 0.66, 0.66, 1.0 ),
+    (0, 0.33, 0.0, 0.33),
+    (0.33, 0.66, 0.0, 0.33),
+    (0.66, 1, 0.0, 0.5),
+    (0, 0.33, 0.33, 0.66),
+    (0.33, 0.66, 0.33, 0.66),
+    (0.66, 1, 0.5, 1.0),
+    (0, 0.66, 0.66, 1.0),
 ]
 
 ndw = fpl.NDWidget(
     ref_range,
     extents=extents,
     names=["pmd", "ac", "behavior-left", "residual", "bg", "behavior-right", "traces"],
-    controller_ids=[("pmd", "ac", "residual", "bg"), ("traces",), ("behavior-right",), ("behavior-left",)],
+    controller_ids=[
+        ("pmd", "ac", "residual", "bg"),
+        ("traces",),
+        ("behavior-right",),
+        ("behavior-left",),
+    ],
     size=(1200, 1200),
 )
 
@@ -69,15 +84,15 @@ ndg_pmd = ndw["pmd"].add_nd_image(
     calcium_dims,
     calcium_spatial_dims,
     index_mappings=calcium_index_mapping.copy(),
+    name="pmd movie",
 )
-
-print(calcium_index_mapping)
 
 ndg_ac = ndw["ac"].add_nd_image(
     dmr.ac_array,
     calcium_dims,
     calcium_spatial_dims,
     index_mappings=calcium_index_mapping.copy(),
+    name="ac movie",
 )
 
 ndg_res = ndw["residual"].add_nd_image(
@@ -85,6 +100,7 @@ ndg_res = ndw["residual"].add_nd_image(
     calcium_dims,
     calcium_spatial_dims,
     index_mappings=calcium_index_mapping.copy(),
+    name="pmd movie",
 )
 
 ndg_bg = ndw["bg"].add_nd_image(
@@ -92,6 +108,7 @@ ndg_bg = ndw["bg"].add_nd_image(
     calcium_dims,
     calcium_spatial_dims,
     index_mappings=calcium_index_mapping.copy(),
+    name="bg movie"
 )
 
 ndg_beh_left = ndw["behavior-left"].add_nd_image(
@@ -101,6 +118,7 @@ ndg_beh_left = ndw["behavior-left"].add_nd_image(
     rgb_dim="c",
     index_mappings={"time": vid_left.timings},
     compute_histogram=False,
+    name="beh movie left"
 )
 
 ndg_beh_right = ndw["behavior-right"].add_nd_image(
@@ -110,6 +128,7 @@ ndg_beh_right = ndw["behavior-right"].add_nd_image(
     rgb_dim="c",
     index_mappings={"time": vid_right.timings},
     compute_histogram=False,
+    name="beh movie right"
 )
 
 # convert C to [l, p, 2]
@@ -128,6 +147,7 @@ ndg_c = ndw["traces"].add_nd_timeseries(
     index_mappings=calcium_index_mapping.copy(),
     x_range_mode="view-range",
     display_window=50.0,
+    name="traces",
 )
 
 for subplot in [ndw.figure["traces"]]:
@@ -136,8 +156,9 @@ for subplot in [ndw.figure["traces"]]:
 
 contours_manager = ContoursManager(
     demixing_results=dmr,
-    subplots=[ndw.figure[name] for name in ["pmd", "ac", "residual", "bg"]]
+    subplots=[ndw.figure[name] for name in ["pmd", "ac", "residual", "bg"]],
 )
+
 
 def update_traces(selection: list[tuple[masknmf.DemixingResults, int]]):
     if len(selection) < 1:
@@ -148,7 +169,12 @@ def update_traces(selection: list[tuple[masknmf.DemixingResults, int]]):
 
     c_subset = c[np.asarray(indices)]
 
-    new_data = np.dstack([np.broadcast_to(dmr.timings[None], (c_subset.shape[0], c_subset.shape[1])), c_subset])
+    new_data = np.dstack(
+        [
+            np.broadcast_to(dmr.timings[None], (c_subset.shape[0], c_subset.shape[1])),
+            c_subset,
+        ]
+    )
 
     ndg_c.data = new_data
 
@@ -157,13 +183,15 @@ def update_traces(selection: list[tuple[masknmf.DemixingResults, int]]):
 
     ndw.figure["traces"].auto_scale()
 
+
 contours_manager.add_event_handler(update_traces)
 
+cursor = fpl.Cursor()
 
 for subplot in ndw.figure:
     subplot.toolbar = False
+    if "behavior" not in subplot.title.text and "traces" not in subplot.title.text:
+        cursor.add_subplot(subplot)
 
 ndw.show()
 fpl.loop.run()
-
-
