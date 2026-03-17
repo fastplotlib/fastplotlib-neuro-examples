@@ -1,7 +1,10 @@
 from pathlib import Path
 
 import masknmf
+import pygfx
+import cmap
 import fastplotlib as fpl
+from fastplotlib.widgets.nd_widget import ndp_extras
 import numpy as np
 from ibl import Video
 from masknmf_utils import ContoursManager
@@ -40,19 +43,29 @@ step = 25 / 1000
 ref_range = {"time": (start_time, stop_time, step)}
 
 extents = [
-    (0, 0.33, 0.0, 0.33),
-    (0.33, 0.66, 0.0, 0.33),
-    (0.66, 1, 0.0, 0.5),
-    (0, 0.33, 0.33, 0.66),
-    (0.33, 0.66, 0.33, 0.66),
-    (0.66, 1, 0.5, 1.0),
-    (0, 0.66, 0.66, 1.0),
+    (0, 0.33, 0.0, 0.25),  # pmd
+    (0.33, 0.66, 0.0, 0.25),  # ac
+    (0.66, 1, 0.0, 0.5),  # beh left
+    (0, 0.33, 0.25, 0.5),  # res
+    (0.33, 0.66, 0.25, 0.5),  # bg
+    (0.66, 1, 0.5, 1.0),  # beh right
+    (0, 0.66, 0.5, 0.75),  # traces
+    (0, 0.66, 0.75, 1),  # lightning pose ethogram
 ]
 
 ndw = fpl.NDWidget(
     ref_range,
     extents=extents,
-    names=["pmd", "ac", "behavior-left", "residual", "bg", "behavior-right", "traces"],
+    names=[
+        "pmd",
+        "ac",
+        "behavior-left",
+        "residual",
+        "bg",
+        "behavior-right",
+        "traces",
+        "ethogram",
+    ],
     controller_ids=[
         ("pmd", "ac", "residual", "bg"),
         ("traces",),
@@ -108,7 +121,7 @@ ndg_bg = ndw["bg"].add_nd_image(
     calcium_dims,
     calcium_spatial_dims,
     index_mappings=calcium_index_mapping.copy(),
-    name="bg movie"
+    name="bg movie",
 )
 
 ndg_beh_left = ndw["behavior-left"].add_nd_image(
@@ -118,7 +131,7 @@ ndg_beh_left = ndw["behavior-left"].add_nd_image(
     rgb_dim="c",
     index_mappings={"time": vid_left.timings},
     compute_histogram=False,
-    name="beh movie left"
+    name="beh movie left",
 )
 
 ndg_beh_right = ndw["behavior-right"].add_nd_image(
@@ -128,8 +141,86 @@ ndg_beh_right = ndw["behavior-right"].add_nd_image(
     rgb_dim="c",
     index_mappings={"time": vid_right.timings},
     compute_histogram=False,
-    name="beh movie right"
+    name="beh movie right",
 )
+
+keypoints = [
+    "nose_tip",
+    "pupil_top_r",
+    "pupil_bottom_r",
+    "pupil_right_r",
+    "pupil_left_r",
+    "paw_l",
+    "paw_r",
+    "tongue_end_l",
+    "tongue_end_r",
+]
+
+keypoints_cols = np.array([(f"{k}_x", f"{k}_y", f"{k}_likelihood") for k in keypoints])
+likelihood_cols = keypoints_cols[:, -1]
+
+
+# add behavior data as an nd scatter
+nd_scatter_left = ndw["behavior-left"].add_nd_scatter(
+    vid_left.tracks,
+    ("l", "time", "d"),
+    keypoints_cols[:, :-1],
+    processor=ndp_extras.NDPP_Pandas,
+    display_window=5.0,
+    index_mappings={"time": vid_left.timings},
+    name="keypoints",
+)
+
+# add behavior data as an nd scatter
+nd_scatter_right = ndw["behavior-right"].add_nd_scatter(
+    vid_right.tracks,
+    ("l", "time", "d"),
+    keypoints_cols[:, :-1],
+    processor=ndp_extras.NDPP_Pandas,
+    display_window=5.0,
+    index_mappings={"time": vid_right.timings},
+    name="keypoints",
+)
+
+for ng in [nd_scatter_left, nd_scatter_right]:
+    ng.graphic.cmap = "tab10"
+
+    # change some properties of the scatter
+    for g in ng.graphic:
+        g.sizes = 7
+        g.visible = True
+        g.edge_width = 0.1
+
+
+# add lightning pose ethogram
+nd_eth = ndw["ethogram"].add_nd_timeseries(
+    vid_left.ethogram_prop,
+    dims=("l", "time", "d"),
+    spatial_dims=("l", "time", "d"),
+    display_window=50.0,
+    index_mappings={"time": vid_left.timings},
+    graphic=fpl.ImageGraphic,
+    name="ethogram",
+    x_range_mode="view-range",
+)
+
+c = pygfx.cm.create_colormap(
+    cmap.Colormap(["white", "green", "orange", "red"]).lut(4), n=4
+)
+nd_eth.graphic._material.map = c
+nd_eth.graphic.vmin, nd_eth.graphic.vmax = 1, 4
+
+
+def prob_tooltip(pick_info):
+    # row col position of the cursor
+    col, row = pick_info["index"]
+    # current displayed image data value at this row, col position
+    val = round(nd_eth.graphic.data[row, col])
+    return {1: "still", 2: "lick", 3: "move", 4: "groom"}.get(val, "undefined")
+
+
+nd_eth.graphic.tooltip_format = prob_tooltip
+
 
 # convert C to [l, p, 2]
 arr = np.zeros((dmr.c.shape[0], dmr.c.shape[1], 2), dtype=np.float32)
@@ -150,7 +241,7 @@ ndg_c = ndw["traces"].add_nd_timeseries(
     name="traces",
 )
 
-for subplot in [ndw.figure["traces"]]:
+for subplot in [ndw.figure["traces"], ndw.figure["ethogram"]]:
     subplot.controller.add_camera(subplot.camera, include_state={"x", "width"})
 
 
@@ -190,8 +281,9 @@ cursor = fpl.Cursor()
 
 for subplot in ndw.figure:
     subplot.toolbar = False
-    if "behavior" not in subplot.title.text and "traces" not in subplot.title.text:
-        cursor.add_subplot(subplot)
+
+for n in ["pmd", "ac", "bg", "residual"]:
+    cursor.add_subplot(ndw.figure[n])
 
 ndw.show()
 fpl.loop.run()
