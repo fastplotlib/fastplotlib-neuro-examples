@@ -9,6 +9,11 @@ import numpy as np
 from ibl import Video
 from masknmf_utils import ContoursManager
 
+import pyinstrument
+
+adapter = fpl.enumerate_adapters()[0]
+print(adapter.info)
+fpl.select_adapter(adapter)
 
 parent_path = Path("/home/kushal/data/alyx/cortexlab/Subjects/")
 
@@ -73,6 +78,7 @@ ndw = fpl.NDWidget(
         ("behavior-left",),
     ],
     size=(1200, 1200),
+    canvas_kwargs={"max_fps": 999}
 )
 
 # dmr.pmd_array
@@ -108,41 +114,41 @@ ndg_ac = ndw["ac"].add_nd_image(
     name="ac movie",
 )
 
-ndg_res = ndw["residual"].add_nd_image(
-    dmr.residual_array,
-    calcium_dims,
-    calcium_spatial_dims,
-    index_mappings=calcium_index_mapping.copy(),
-    name="pmd movie",
-)
+# ndg_res = ndw["residual"].add_nd_image(
+#     dmr.residual_array,
+#     calcium_dims,
+#     calcium_spatial_dims,
+#     index_mappings=calcium_index_mapping.copy(),
+#     name="pmd movie",
+# )
+#
+# ndg_bg = ndw["bg"].add_nd_image(
+#     dmr.fluctuating_background_array,
+#     calcium_dims,
+#     calcium_spatial_dims,
+#     index_mappings=calcium_index_mapping.copy(),
+#     name="bg movie",
+# )
 
-ndg_bg = ndw["bg"].add_nd_image(
-    dmr.fluctuating_background_array,
-    calcium_dims,
-    calcium_spatial_dims,
-    index_mappings=calcium_index_mapping.copy(),
-    name="bg movie",
-)
-
-ndg_beh_left = ndw["behavior-left"].add_nd_image(
-    vid_left.array,
-    vid_dims,
-    vid_spatial_dims,
-    rgb_dim="c",
-    index_mappings={"time": vid_left.timings},
-    compute_histogram=False,
-    name="beh movie left",
-)
-
-ndg_beh_right = ndw["behavior-right"].add_nd_image(
-    vid_right.array,
-    vid_dims,
-    vid_spatial_dims,
-    rgb_dim="c",
-    index_mappings={"time": vid_right.timings},
-    compute_histogram=False,
-    name="beh movie right",
-)
+# ndg_beh_left = ndw["behavior-left"].add_nd_image(
+#     vid_left.array,
+#     vid_dims,
+#     vid_spatial_dims,
+#     rgb_dim="c",
+#     index_mappings={"time": vid_left.timings},
+#     compute_histogram=False,
+#     name="beh movie left",
+# )
+#
+# ndg_beh_right = ndw["behavior-right"].add_nd_image(
+#     vid_right.array,
+#     vid_dims,
+#     vid_spatial_dims,
+#     rgb_dim="c",
+#     index_mappings={"time": vid_right.timings},
+#     compute_histogram=False,
+#     name="beh movie right",
+# )
 
 keypoints = [
     "nose_tip",
@@ -199,9 +205,9 @@ nd_eth = ndw["ethogram"].add_nd_timeseries(
     spatial_dims=("l", "time", "d"),
     display_window=50.0,
     index_mappings={"time": vid_left.timings},
-    graphic=fpl.ImageGraphic,
+    graphic_type=fpl.ImageGraphic,
     name="ethogram",
-    x_range_mode="view-range",
+    x_range_mode="auto",
 )
 
 c = pygfx.cm.create_colormap(
@@ -232,11 +238,11 @@ c = dmr.c.T.cpu().numpy()
 traces = np.dstack([np.broadcast_to(dmr.timings[None], (c.shape[0], c.shape[1])), c])
 
 ndg_c = ndw["traces"].add_nd_timeseries(
-    traces[:10],
+    None,
     ("l", "time", "d"),
     ("l", "time", "d"),
     index_mappings=calcium_index_mapping.copy(),
-    x_range_mode="view-range",
+    x_range_mode="auto",
     display_window=50.0,
     name="traces",
 )
@@ -252,7 +258,8 @@ contours_manager = ContoursManager(
 
 
 def update_traces(selection: list[tuple[masknmf.DemixingResults, int]]):
-    if len(selection) < 1:
+    if len(selection) == 0:
+        ndg_c.data = None
         return
 
     # the new selected components
@@ -286,4 +293,19 @@ for n in ["pmd", "ac", "bg", "residual"]:
     cursor.add_subplot(ndw.figure[n])
 
 ndw.show()
-fpl.loop.run()
+ndw.indices["time"] = 1000
+ndw._sliders_ui._playing["time"] = True
+ndw.figure.renderer.pixel_ratio = 1.0
+ndw.figure.imgui_show_fps = True
+
+run_profile = True
+
+if run_profile:
+    with pyinstrument.Profiler(async_mode="enabled") as profiler:
+        fpl.loop.run()
+
+    profiler.print()
+    profiler.open_in_browser()
+
+else:
+    fpl.loop.run()

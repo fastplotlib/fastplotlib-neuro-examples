@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from functools import partial
+from itertools import cycle
 
 import cv2
 import numpy as np
@@ -8,6 +9,9 @@ import pygfx
 import masknmf
 from tqdm import tqdm
 import cmap
+
+
+CONTOUR_COLOR_UNSELECTED = (1, 1, 1, 0.05)
 
 
 def mask_to_contour_points(mask: np.ndarray, outline_mode) -> np.ndarray:
@@ -144,7 +148,7 @@ def texture_from_contours(
 
     for comp_index in range(len(contours)):
         for p in contours[comp_index]:
-            texture_data[p[0], p[1]] += [1, 1, 1, alpha]
+            texture_data[p[0], p[1]] += CONTOUR_COLOR_UNSELECTED
 
     return texture_data
 
@@ -201,7 +205,8 @@ class ContoursManager:
         # so we can keep track of comps from different DMRs
         self._selection: list[tuple[masknmf.DemixingResults, int]] = list()
 
-        self._colors = cmap.Colormap("tab20").lut()
+        self._color_cycler = cycle(cmap.Colormap("tab10").lut())
+        self._colors = list()
 
     @property
     def original_contours_textures(self) -> dict[masknmf.DemixingResults, np.ndarray]:
@@ -306,13 +311,32 @@ class ContoursManager:
         contour = self._contours[dmr][comp_index]
 
         # get the current selection color
-        color = self._colors[len(self._selection)]
+        color = next(self._color_cycler)
 
         # if the buffer is shared (synced selection), then this will change ALL contour ImageGraphics
         # if the contours are independent per-subplot, then this will change it for just that subplot
         self._contour_graphics[dmr].data[contour[:, 0], contour[:, 1]] = color
 
         self._selection.append((dmr, comp_index))
+        self._colors.append(color)
+
+        self._selection_changed(self._selection)
+
+    def unselect_component(self, dmr: masknmf.DemixingResults, comp_index: int):
+        if (dmr, comp_index) not in self._selection:
+            return
+
+        # get the contour that corresponds to this component index
+        contour = self._contours[dmr][comp_index]
+
+        # if the buffer is shared (synced selection), then this will change ALL contour ImageGraphics
+        # if the contours are independent per-subplot, then this will change it for just that subplot
+        self._contour_graphics[dmr].data[contour[:, 0], contour[:, 1]] = CONTOUR_COLOR_UNSELECTED
+
+        index = self._selection.index((dmr, comp_index))
+
+        self._selection.pop(index)
+        self._colors.pop(index)
 
         self._selection_changed(self._selection)
 
@@ -326,6 +350,7 @@ class ContoursManager:
         subplot["contours"].data = self.original_contours_textures[dmr]
 
         self._selection.clear()
+        self._colors.clear()
 
         self._selection_changed(self._selection)
 
@@ -340,7 +365,10 @@ class ContoursManager:
 
         index = self.find_closest_components(dmr, (row, col))[0]
 
-        self.select_component(dmr, index)
+        if "Control" in ev.modifiers:
+            self.unselect_component(dmr, index)
+        else:
+            self.select_component(dmr, index)
 
     def find_closest_components(
         self, dmr: masknmf.DemixingResults, point: tuple[float, float]
