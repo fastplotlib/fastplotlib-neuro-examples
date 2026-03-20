@@ -49,6 +49,7 @@ ref_range = {"time": (start_time, stop_time, step)}
 
 ndw_fov = fpl.NDWidget(
     ref_range,
+    names=["pmd", "ac", "residual", "bg"],
     controller_ids=[
         ("pmd", "ac", "residual", "bg"),
     ],
@@ -58,7 +59,8 @@ ndw_fov = fpl.NDWidget(
 )
 
 ndw_beh = fpl.NDWidget(
-    ref_range=ndw_fov.indices.ref_ranges,
+    ref_ranges=ndw_fov.indices.ref_ranges,
+    ref_index=ndw_fov.indices,
     names=["left", "right"],
     shape=(1, 2),
     size=(800, 400),
@@ -85,7 +87,7 @@ ndg_pmd = ndw_fov["pmd"].add_nd_image(
     dmr.pmd_array,
     calcium_dims,
     calcium_spatial_dims,
-    index_mappings=calcium_index_mapping.copy(),
+    slider_dim_transforms=calcium_index_mapping.copy(),
     name="pmd movie",
 )
 
@@ -93,7 +95,7 @@ ndg_ac = ndw_fov["ac"].add_nd_image(
     dmr.ac_array,
     calcium_dims,
     calcium_spatial_dims,
-    index_mappings=calcium_index_mapping.copy(),
+    slider_dim_transforms=calcium_index_mapping.copy(),
     name="ac movie",
 )
 
@@ -101,7 +103,7 @@ ndg_res = ndw_fov["residual"].add_nd_image(
     dmr.residual_array,
     calcium_dims,
     calcium_spatial_dims,
-    index_mappings=calcium_index_mapping.copy(),
+    slider_dim_transforms=calcium_index_mapping.copy(),
     name="pmd movie",
 )
 
@@ -109,7 +111,7 @@ ndg_bg = ndw_fov["bg"].add_nd_image(
     dmr.fluctuating_background_array,
     calcium_dims,
     calcium_spatial_dims,
-    index_mappings=calcium_index_mapping.copy(),
+    slider_dim_transforms=calcium_index_mapping.copy(),
     name="bg movie",
 )
 
@@ -118,17 +120,17 @@ ndg_beh_left = ndw_beh["left"].add_nd_image(
     vid_dims,
     vid_spatial_dims,
     rgb_dim="c",
-    index_mappings={"time": vid_left.timings},
+    slider_dim_transforms={"time": vid_left.timings},
     compute_histogram=False,
     name="beh movie left",
 )
 
-ndg_beh_right = ndw_beh["behavior-right"].add_nd_image(
+ndg_beh_right = ndw_beh["right"].add_nd_image(
     vid_right.array,
     vid_dims,
     vid_spatial_dims,
     rgb_dim="c",
-    index_mappings={"time": vid_right.timings},
+    slider_dim_transforms={"time": vid_right.timings},
     compute_histogram=False,
     name="beh movie right",
 )
@@ -150,24 +152,24 @@ likelihood_cols = keypoints_cols[:, -1]
 
 
 # add behavior data as an nd scatter
-nd_scatter_left = ndw_beh["behavior-left"].add_nd_scatter(
+nd_scatter_left = ndw_beh["left"].add_nd_scatter(
     vid_left.tracks,
     ("l", "time", "d"),
     keypoints_cols[:, :-1],
     processor=ndp_extras.NDPP_Pandas,
     display_window=5.0,
-    index_mappings={"time": vid_left.timings},
+    slider_dim_transforms={"time": vid_left.timings},
     name="keypoints",
 )
 
 # add behavior data as an nd scatter
-nd_scatter_right = ndw_beh["behavior-right"].add_nd_scatter(
+nd_scatter_right = ndw_beh["right"].add_nd_scatter(
     vid_right.tracks,
     ("l", "time", "d"),
     keypoints_cols[:, :-1],
     processor=ndp_extras.NDPP_Pandas,
     display_window=5.0,
-    index_mappings={"time": vid_right.timings},
+    slider_dim_transforms={"time": vid_right.timings},
     name="keypoints",
 )
 
@@ -197,17 +199,18 @@ extents_zoom = {
 }
 
 ndw_zoom = fpl.NDWidget(
-    ref_range=ndw_fov.indices.ref_ranges,
+    ref_ranges=ndw_fov.indices.ref_ranges,
+    ref_index=ndw_fov.indices,
     extents=extents_zoom,
-    size=(1200, 1200),
+    size=(800, 400),
     canvas_kwargs={"max_fps": 999}
 )
 
 ndw_zoom.figure["C"].controller.add_camera(
-    ndw_zoom.figure["C"], include_state={"x", "width"}
+    ndw_zoom.figure["C"].camera, include_state={"x", "width"}
 )
 ndw_zoom.figure["behavior"].controller.add_camera(
-    ndw_zoom.figure["behavior"], include_state={"x", "width"}
+    ndw_zoom.figure["behavior"].camera, include_state={"x", "width"}
 )
 
 calcium_dims = ["time", "m", "n"]
@@ -219,9 +222,10 @@ vid_spatial_dims = ["m", "n", "c"]
 
 dmr.pmd_array.to("cuda")
 
-ac_zoom = ndw_zoom.figure["ac-zoom"].add_image(
-    np.zeros((2, 2), dtype=np.float32),
-    cmap="viridis",
+ac_zoom = ndw_zoom["ac-zoom"].add_nd_image(
+    np.zeros((2, 2)),
+    dims=("m", "n"),
+    spatial_dims=("m", "n"),
 )
 
 # add lightning pose ethogram
@@ -230,7 +234,7 @@ nd_eth = ndw_zoom["behavior"].add_nd_timeseries(
     dims=("l", "time", "d"),
     spatial_dims=("l", "time", "d"),
     display_window=50.0,
-    index_mappings={"time": vid_left.timings},
+    slider_dim_transforms={"time": vid_left.timings},
     graphic_type=fpl.ImageGraphic,
     name="ethogram",
     x_range_mode="auto",
@@ -253,20 +257,17 @@ def prob_tooltip(pick_info):
 
 nd_eth.graphic.tooltip_format = prob_tooltip
 
-# convert C to [l, p, 2]
-arr = np.zeros((dmr.c.shape[0], dmr.c.shape[1], 2), dtype=np.float32)
-
 # get c in shape [k, t]
 c = dmr.c.T.cpu().numpy()
 
-# shape to [k, t, xy], i.e. [k, t, 2]
-traces = np.dstack([np.broadcast_to(dmr.timings[None], (c.shape[0], c.shape[1])), c])
+# [k, t] -> [k, t, 2]
+traces = fpl.utils.heatmap_to_positions(c, dmr.timings)
 
 ndg_c = ndw_zoom["C"].add_nd_timeseries(
     None,
     ("l", "time", "d"),
     ("l", "time", "d"),
-    index_mappings=calcium_index_mapping.copy(),
+    slider_dim_transforms=calcium_index_mapping.copy(),
     x_range_mode="auto",
     display_window=50.0,
     name="traces",
@@ -279,16 +280,20 @@ for subplot in ndw_zoom.figure:
 
 
 ndw_heatmap = fpl.NDWidget(
-    names=["heatmap"]
+    ref_ranges=ndw_fov.indices.ref_ranges,
+    ref_index=ndw_fov.indices,
+    names=["heatmap"],
+    size=(500, 1000),
 )
 
 ndg_heatmap = ndw_heatmap[0, 0].add_nd_timeseries(
-    dmr.c,
+    traces,
     ("l", "time", "d"),
     ("l", "time", "d"),
-    index_mappings=calcium_index_mapping.copy(),
-    x_range_mode="auto",
+    slider_dim_transforms=calcium_index_mapping.copy(),
+    x_range_mode=None,
     display_window=None,
+    graphic_type=fpl.ImageGraphic,
     name="traces",
 )
 
@@ -307,31 +312,21 @@ def update_traces(selection: list[tuple[masknmf.DemixingResults, int]]):
 
     # the new selected components
     indices = [s[1] for s in selection]
+    ndg_c.data = traces[np.asarray(indices)]
 
-    c_subset = c[np.asarray(indices)]
+    # for i, g in enumerate(ndg_c.graphic.graphics):
+    #     g.colors = contours_manager._colors[i]
 
-    new_data = np.dstack(
-        [
-            np.broadcast_to(dmr.timings[None], (c_subset.shape[0], c_subset.shape[1])),
-            c_subset,
-        ]
-    )
-
-    ndg_c.data = new_data
-
-    for i, g in enumerate(ndg_c.graphic.graphics):
-        g.colors = contours_manager._colors[i]
-
-    ndw_fov.figure["traces"].auto_scale()
-
-
-contours_manager.add_event_handler(update_traces)
+    ndw_zoom.figure["C"].auto_scale()
 
 rect_selectors: list[fpl.RectangleSelector] = list()
 for ndi in ndw_fov.ndgraphics:
     rs = ndi.graphic.add_rectangle_selector(
         edge_color="r",
         edge_thickness=1.0,
+        vertex_size=4.0,
+        vertex_color="w",
+        fill_color=(0, 0, 0, 0), # no fill color, otherwise it blocks picking of the image below, which blocks tooltips
     )
 
     rect_selectors.append(rs)
@@ -343,25 +338,53 @@ def heatmap_selector_handler(ev: fpl.GraphicFeatureEvent):
     select_component(index)
 
 
-def select_component(index: int):
-    xmin, ymin, xmax, ymax = contours_manager._contours[dmr][index]
+def select_component(index: int | None):
+    contours_manager.clear_selection(ndw_fov.figure["ac"], dmr)
+
+    if index is None:
+        ndg_c.data = None
+        return
+
+    contour = contours_manager._contours[dmr][index]
+    # contours are [row_ixs, col_ixs], NOT [x, y].
+    # this is because they are used for directly indexing into the image for representing contours graphically
+    ymin, xmin, ymax, xmax = (*contour.min(axis=0), *contour.max(axis=0))
 
     for rs in rect_selectors:
-        rs.selection = (xmin, xmax, ymin, ymax)
+        # pad by a few pixels
+        rs.selection = (xmin - 5, xmax + 5, ymin - 5, ymax + 5)
 
     update_traces([(dmr, index)])
     heatmap_comp_selector.selection = index
+    contours_manager.select_component(dmr, index)
 
 
-contours_manager.add_event_handler(select_component)
+contours_manager.add_event_handler(lambda new: select_component(new[-1][1]) if len(new) > 0 else None)
 
 
-@rect_selectors[1].add_event_handler("selection')")
+@rect_selectors[1].add_event_handler("selection")
 def update_zoom(ev: fpl.GraphicFeatureEvent):
     zoom_data = ev.get_selected_data()
+    # this provides a VIEW of the buffer in the full FOV graphic
+    # so we do not need to have extra update logic for the zoomed graphic
+    # when the full FOV graphic buffer updates, since the zoomed one uses
+    # has a view of the same buffer it will also visually update
     ac_zoom.data = zoom_data
+    xmin, xmax, ymin, ymax = ev.info["value"]
+    # set the position of the zoomed view in the x-y location as the full FOV
+    # so the crosshair tool aligns
+    ac_zoom.graphic.offset = (xmin, ymin, 0)
+    ndw_zoom.figure["ac-zoom"].auto_scale()
+
+    # update the histogram using the current histogram in the ac full FOV subplot
+    ac_zoom.histogram_widget.histogram = ndg_ac.processor.histogram
+    # likewise set vmin, vmax
+    ac_zoom.graphic.vmin, ac_zoom.graphic.vmax = ndg_ac.graphic.vmin, ndg_ac.graphic.vmax
 
 
+ndw_fov.show()
+ndw_beh.show()
+ndw_heatmap.show()
 ndw_zoom.show()
 ndw_heatmap.show()
 
