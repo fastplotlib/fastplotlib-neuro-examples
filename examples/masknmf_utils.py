@@ -320,8 +320,6 @@ class ContoursManager:
         self._selection.append((dmr, comp_index))
         self._colors.append(color)
 
-        self._selection_changed(self._selection)
-
     def unselect_component(self, dmr: masknmf.DemixingResults, comp_index: int):
         if (dmr, comp_index) not in self._selection:
             return
@@ -338,8 +336,6 @@ class ContoursManager:
         self._selection.pop(index)
         self._colors.pop(index)
 
-        self._selection_changed(self._selection)
-
     def clear_selection(self, subplot, dmr):
         if len(self._selection) < 1:
             # nothing is selected
@@ -351,8 +347,6 @@ class ContoursManager:
 
         self._selection.clear()
         self._colors.clear()
-
-        self._selection_changed(self._selection)
 
     def _image_clicked(
         self, subplot, dmr: masknmf.DemixingResults, ev: pygfx.PointerEvent
@@ -369,6 +363,8 @@ class ContoursManager:
             self.unselect_component(dmr, index)
         else:
             self.select_component(dmr, index)
+
+        self._selection_changed(self._selection)
 
     def find_closest_components(
         self, dmr: masknmf.DemixingResults, point: tuple[float, float]
