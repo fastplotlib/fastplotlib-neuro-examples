@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from lazyvideo import LazyVideo
+from vr_async import AsyncVideoReader
 from decord import gpu, cpu
 
 
@@ -26,7 +27,7 @@ class Video:
         else:
             ctx = cpu(0)
 
-        self._array = LazyVideo(vid_path, ctx=ctx)
+        self._array = AsyncVideoReader(vid_path)#, ctx=ctx)
 
         timings_path = parent_path.joinpath(
             subject, session, "001", "alf", f"_ibl_{camera}Camera.times.npy"
@@ -104,7 +105,7 @@ class Video:
         )
 
     @property
-    def array(self) -> LazyVideo:
+    def array(self) -> AsyncVideoReader:
         return self._array
 
     @property
