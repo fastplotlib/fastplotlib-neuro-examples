@@ -1,3 +1,4 @@
+from lazyvideo import LazyVideo
 import numpy as np
 import spikeinterface.full as si
 import dartsort
@@ -20,9 +21,15 @@ ty_data = np.column_stack([spike_xs, spike_ys])[None]
 ty_data_scaled = np.column_stack([spike_xs, spike_ys / 10])[None]
 ampy_data = np.c_[amps, spike_ys][None]
 
-# generate some random colors with the same number of datapoints as ampy_data and ty_data
-data_colors = np.random.rand(ampy_data.shape[1], 4)
-data_colors[:, -1] = 8  # set alpha value to 0.8
+
+vid_path_left = "/home/kushal/data/charlie/sub-CSH-ZAD-026_ses-15763234-d21e-491f-a01b-1238eb96d389_VideoRightCamera.mp4"
+vid_path_right = "/home/kushal/data/charlie/sub-CSH-ZAD-026_ses-15763234-d21e-491f-a01b-1238eb96d389_VideoLeftCamera.mp4"
+
+vid_left = LazyVideo(vid_path_left)
+vid_right = LazyVideo(vid_path_right)
+
+timings_left = np.load("/home/kushal/data/charlie/timings_left.npy")
+timings_right = np.load("/home/kushal/data/charlie/timings_right.npy")
 
 # define the reference ranges, you will probably just have time
 # other examples of reference spaces are depth
@@ -87,10 +94,8 @@ ndg_ampy = ndw_spikes["ampy"].add_nd_scatter(
     slider_dim_transforms={"time": lambda t: spike_xs.searchsorted(t)},
     display_window=100,
     max_display_datapoints=1_000_000,
-    colors=data_colors,  # if you have per-point colors supply them here
-    sizes=10,  # scatter sizes, you can also provide an array of per-point sizes
+    # colors=colors,  # if you have per-point colors supply them here
 )
-
 
 ndw_spikes.figure["ampy"].camera.maintain_aspect = False
 
@@ -106,12 +111,46 @@ ndg_ty = ndw_spikes["ty"].add_nd_timeseries(
     x_range_mode="fixed",
     graphic_type=fpl.ScatterCollection,
     max_display_datapoints=1_000_000,
-    colors=data_colors,  # if you have per-point colors supply them here
-    sizes=10,
+    # colors=colors,
 )
+
+# better dot sizes and stuff for the scatters
+for ndg in [ndg_ampy, ndg_ty]:
+    ndg.graphic.sizes = 3
+    ndg.graphic.edge_width = 0
+
+# another window for the behavior
+ndw_beh = fpl.NDWidget(
+    ref_ranges=ref_ranges,
+    ref_index=ndw_rec.indices,
+    names=["left", "right"],
+    shape=(1, 2)
+)
+
+# a video is just an nd image
+ndw_beh["left"].add_nd_image(
+    vid_left,
+    dims=("time", "m", "n", "c"),  # mp4 vids are usually RGB, so we have an extra "c" color dim
+    spatial_dims=tuple("mnc"),
+    rgb_dim="c",  # need to specify color rgb dim if it exists, otherwise it will assume the data is 3D volumes
+    slider_dim_transforms={"time": lambda t: timings_left.searchsorted(t / 1000)},
+    compute_histogram=False,  # for mp4 vids make sure this is False, else it takes a long time to compute histograms
+)
+
+# a video is just an nd image
+ndw_beh["right"].add_nd_image(
+    vid_right,
+    dims=("time", "m", "n", "c"),  # mp4 vids are usually RGB, so we have an extra "c" color dim
+    spatial_dims=tuple("mnc"),
+    rgb_dim="c",  # need to specify color rgb dim if it exists, otherwise it will assume the data is 3D volumes
+    slider_dim_transforms={"time": lambda t: timings_right.searchsorted(t / 1000)},
+    compute_histogram=False,
+)
+
 
 ndw_rec.show()
 ndw_spikes.show()
+ndw_beh.show()
 
 # in a notebook you can use ipywidget layouting
 # ex: import ipywidgets
