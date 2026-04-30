@@ -155,7 +155,6 @@ for i in range(contours_.shape[1]):
 
 tab10_cmap = cmap_lib.Colormap("tab10").lut(10)
 
-from fastplotlib.tools._selection_vector import SelectionVector
 
 # create selectors
 contour_selector = fpl.ImageHighlightSelector(
@@ -177,10 +176,10 @@ hm_highlighter = fpl.ImageHighlightSelector(
 hm_highlighter.add_graphic(ndg_hm_all.graphic)
 
 # changes which traces are visible in the linestack and heatmap above it
-traces_visible_selector = fpl.VisibilitySelector(ndg_traces_selected.graphic, lut=tab10_cmap)
+traces_visible_selector = fpl.VisibilitySelector(ndg_traces_selected.graphic, lut=tab10_cmap, lut_wrap="repeat")
 traces_hm_visible_selector = fpl.ImageVisibilitySelector(ndg_hm_selected.graphic)
 
-sv = SelectionVector()
+sv = fpl.SelectionVector()
 
 # add all selectors to the selection vector
 # contours are pre-loaded in the selection options so we actually don't need to specify a mapping

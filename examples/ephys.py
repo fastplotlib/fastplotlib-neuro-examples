@@ -9,12 +9,13 @@ rec = si.read_binary_folder(rec_path)
 
 # sorting
 sorting = dartsort.threshold(output_dir="/home/kushal/data/charlie/ppx_sub-CSH-ZAD-026_spikes", recording=rec)
-spike_xs = sorting.times_seconds * 1000
+spike_xs = sorting.times_seconds
 spike_ys = sorting.point_source_localizations[:, 2]
 amps = sorting.denoised_ptp_amplitudes
 
 # [n_datapoints, xy] -> [1, n_datapoints, xy]
 ty_data = np.column_stack([spike_xs, spike_ys])[None]
+
 
 # just a scaled ty so it fits onto the recording heatmap, not sure if this is entirely right??
 ty_data_scaled = np.column_stack([spike_xs, spike_ys / 10])[None]
@@ -26,7 +27,7 @@ data_colors[:, -1] = 8  # set alpha value to 0.8
 
 # define the reference ranges, you will probably just have time
 # other examples of reference spaces are depth
-ref_ranges = {"time": (rec.get_start_time() * 1000, rec.get_end_time() * 1000, 10)}
+ref_ranges = {"time": (rec.get_start_time(), rec.get_end_time(), 0.001)}
 
 # create an ndwidget, give it the reference range
 ndw_rec = fpl.NDWidget(
@@ -41,10 +42,10 @@ ndg_rec = ndw_rec[0, 0].add_nd_timeseries(
     spatial_dims=("l", "time", "d"),
     graphic_type=fpl.ImageGraphic,  # view as an image, can change to a linestack on the fly
     cmap="seismic",
-    display_window=50,  # window of data to plot in reference space, i.e. seconds here
+    display_window=0.05,  # window of data to plot in reference space, i.e. seconds here
     x_range_mode="fixed",
     processor=NDSpikeInterfaceProcessor,
-    slider_dim_transforms={"time": lambda t: rec.time_to_sample_index(t / 1000)},
+    slider_dim_transforms={"time": lambda t: rec.time_to_sample_index(t)},
 )
 
 ndw_rec[0, 0].zoom = 1.3
@@ -57,7 +58,7 @@ ndg_ty_overlay = ndw_rec[0, 0].add_nd_timeseries(
     dims=("l", "time", "d"),
     spatial_dims=("l", "time", "d"),
     slider_dim_transforms={"time": lambda t: spike_xs.searchsorted(t)},
-    display_window=50,
+    display_window=0.05,
     x_range_mode="fixed",
     graphic_type=fpl.ScatterCollection,
     max_display_datapoints=1_000_000,
@@ -85,7 +86,7 @@ ndg_ampy = ndw_spikes["ampy"].add_nd_scatter(
     dims=("l", "time", "d"),
     spatial_dims=("l", "time", "d"),
     slider_dim_transforms={"time": lambda t: spike_xs.searchsorted(t)},
-    display_window=100,
+    display_window=0.1,
     max_display_datapoints=1_000_000,
     colors=data_colors,  # if you have per-point colors supply them here
     sizes=10,  # scatter sizes, you can also provide an array of per-point sizes
@@ -102,7 +103,7 @@ ndg_ty = ndw_spikes["ty"].add_nd_timeseries(
     dims=("l", "time", "d"),
     spatial_dims=("l", "time", "d"),
     slider_dim_transforms={"time": lambda t: spike_xs.searchsorted(t)},
-    display_window=50,
+    display_window=0.1,
     x_range_mode="fixed",
     graphic_type=fpl.ScatterCollection,
     max_display_datapoints=1_000_000,
