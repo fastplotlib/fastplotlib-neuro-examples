@@ -15,7 +15,7 @@ session_df = pd.read_csv("./multisession-matching.csv")
 def get_coors(col_indices: torch.Tensor, shape: tuple[int, int]) -> torch.Tensor:
     rows = col_indices // shape[1]
     cols = col_indices % shape[1]
-    return torch.dstack([rows, cols]).squeeze()
+    return torch.dstack([cols, rows]).squeeze()
 
 
 def master_to_local(session_id: int, index: Sequence[int]) -> Sequence[int | None]:
@@ -24,9 +24,9 @@ def master_to_local(session_id: int, index: Sequence[int]) -> Sequence[int | Non
         local_id = session_df.iloc[i][str(session_id)]
 
         if np.isnan(local_id):
-            return None
-
-        indices.append(int(local_id))
+            indices.append(None)
+        else:
+            indices.append(int(local_id))
 
     return indices
 
@@ -124,9 +124,13 @@ for session_index, dmr in enumerate(dmrs):
         fpl.utils.heatmap_to_positions(dmr.c.T.cpu().numpy(), dmr.timings),
         dims=("l", f"time-{session_index}", "d"),
         spatial_dims=("l", f"time-{session_index}", "d"),
-        x_range_mode="fixed",
+        slider_dim_transforms={f"time-{session_index}": dmr.timings},
+        x_range_mode="auto",
         display_window=500,
     )
+    traces_subplot = ndw_traces[f"traces-{session_index}"].subplot
+    traces_subplot.toolbar = False
+    traces_subplot.controller.add_camera(traces_subplot.camera, include_state={"x", "width"})
 
     contours = dmr.ac_array.contours
     coors = list()
@@ -163,6 +167,7 @@ for subplot in ndw_images.figure:
     cursor.add_subplot(subplot)
 
 ndw_images.show()
-ndw_traces.show()
+# make sure autoscale=False else the set display_window gets discarded!
+ndw_traces.show(maintain_aspect=False, autoscale=False)
 
 fpl.loop.run()
