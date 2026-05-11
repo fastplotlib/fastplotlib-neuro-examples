@@ -27,13 +27,16 @@ data_colors[:, -1] = 8  # set alpha value to 0.8
 
 # define the reference ranges, you will probably just have time
 # other examples of reference spaces are depth
-ref_ranges = {"time": (rec.get_start_time(), rec.get_end_time(), 0.001)}
+ref_ranges = {"time": (rec.get_start_time(), rec.get_end_time(), 0.0005)}
 
 # create an ndwidget, give it the reference range
 ndw_rec = fpl.NDWidget(
     ref_ranges=ref_ranges,
     size=(800, 300)
 )
+
+ndw_rec[0, 0].subplot.controller.add_camera(ndw_rec[0, 0].subplot.camera, include_state={"x", "width"})
+
 
 # add the recording as an nd timeseries
 ndg_rec = ndw_rec[0, 0].add_nd_timeseries(
@@ -43,7 +46,7 @@ ndg_rec = ndw_rec[0, 0].add_nd_timeseries(
     graphic_type=fpl.ImageGraphic,  # view as an image, can change to a linestack on the fly
     cmap="seismic",
     display_window=0.05,  # window of data to plot in reference space, i.e. seconds here
-    x_range_mode="fixed",
+    x_range_mode="auto",
     processor=NDSpikeInterfaceProcessor,
     slider_dim_transforms={"time": lambda t: rec.time_to_sample_index(t)},
 )
@@ -59,7 +62,7 @@ ndg_ty_overlay = ndw_rec[0, 0].add_nd_timeseries(
     spatial_dims=("l", "time", "d"),
     slider_dim_transforms={"time": lambda t: spike_xs.searchsorted(t)},
     display_window=0.05,
-    x_range_mode="fixed",
+    x_range_mode="auto",
     graphic_type=fpl.ScatterCollection,
     max_display_datapoints=1_000_000,
 )
@@ -111,8 +114,8 @@ ndg_ty = ndw_spikes["ty"].add_nd_timeseries(
     sizes=10,
 )
 
-ndw_rec.show()
-ndw_spikes.show()
+ndw_rec.show(maintain_aspect=False)
+ndw_spikes.show(maintain_aspect=False)
 
 # in a notebook you can use ipywidget layouting
 # ex: import ipywidgets

@@ -142,7 +142,7 @@ ndg_hm_selected = ndw_traces["heatmap"].add_nd_timeseries(
 def get_coors(col_indices: torch.Tensor, shape: tuple[int, int]) -> torch.Tensor:
     rows = col_indices // shape[1]
     cols = col_indices % shape[1]
-    return torch.dstack([rows, cols]).squeeze()
+    return torch.dstack([cols, rows]).squeeze()
 
 
 contours_ = dmr.ac_array.contours
@@ -214,7 +214,10 @@ for subplot in ndw_traces.figure:
 
 ndw.show(axes_visible=False)
 ndw_hm.show()
-ndw_traces.show()
+
+# make sure autoscale=False!!
+# Otherwise display_window gets discarded since the initial VisibilitySelector selection is empty
+ndw_traces.show(autoscale=False, maintain_aspect=False)
 ndw.figure.imgui_show_fps = True
 
 run_profile = False

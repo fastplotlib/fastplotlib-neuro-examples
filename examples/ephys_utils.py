@@ -41,7 +41,7 @@ class NDSpikeInterfaceProcessor(NDPositionsProcessor):
             self.spatial_dims[2]: 2  # `d` dim, spatial dim, xy data values
         }
 
-    def get(self, indices: tuple[float | int, ...]) -> dict[str, np.ndarray]:
+    async def get(self, indices: tuple[float | int, ...]) -> dict[str, np.ndarray]:
         # assume no additional slider dims, only time slider dim
         s = self._get_dw_slice(indices)
 
