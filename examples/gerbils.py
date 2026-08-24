@@ -5,18 +5,20 @@ import soundfile as sf
 from scipy.signal import spectrogram
 import fastplotlib as fpl
 import os
+from ethogram import Ethogram, EthogramManager, EthogramEditor
 from typing import *
 from pathlib import Path
 from warnings import warn
 from asyncvideo import AsyncVideoReader
 import pynapple as nap
+from imgui_bundle import imgui
 
 
 # ==== Choose ====
 animal_name = "dad"
 exp_num = 492
 file_num = 11
-channel_numbers = [5, 2, 1, 0]  # Choose 4 channels   [2,0,4,5]
+channel_numbers = [5, 3, 1, 0]  # Choose 4 channels   [2,0,4,5]
 
 spec_height = 300
 spec_width = 1500
@@ -53,9 +55,9 @@ video_prefix_map = {
     2: "video_center_",
     3: "video_center_",
     4: "video_gily_center_",  # change back
-    5: "video_gily_center_",  # change back
+    1: "video_gily_center_",  # change back
     0: "video_nest_top_",  # "video_nest_top_", video_nest_side_
-    1: "video_burrow_side_",  # "video_burrow_top_" video_burrow_side_
+    5: "video_burrow_side_",  # "video_burrow_top_" video_burrow_side_
 }
 
 # maps int -> location
@@ -67,6 +69,9 @@ name_mapping = {
     0: "nest",
     5: "burrow",
 }
+
+burrow_extras = ["video_burrow_top_"]
+nest_extras = ["video_nest_other_side_", "video_nest_side_"]
 
 location_order = ["center-2", "center-1", "burrow", "nest"]
 
@@ -108,6 +113,11 @@ for ch in channel_numbers:
 
     video_paths[name_mapping[ch]] = video_path
     audio_paths[name_mapping[ch]] = audio_path
+
+for extra in burrow_extras + nest_extras:
+    video_paths[extra] = video_path_padded = os.path.join(
+        base_path, f"{extra}{file_num_str}.mp4"
+    )
 
 ## Load video and audio ##
 # # maps location name -> LazyVideo
@@ -163,6 +173,8 @@ extents = [
 # %%
 spec_names = list()
 beh_names = list()
+# maps location name -> behavior video NDGraphic
+videos = dict()
 for loc in location_order:
     spec_names.append(f"spec-{loc}")
     beh_names.append(f"beh-{loc}")
@@ -216,14 +228,43 @@ for loc in location_order:
     beh_name = f"beh-{loc}"
     vid = movies[loc]
 
-    ng = ndw_main[beh_name].add_video(
+    ndg_vid = ndw_main[beh_name].add_video(
         vid,
         dims=("time", "m", "n"),
         spatial_dims=("m", "n"),
         slider_dim_transforms={"time": vid.time},
         compute_histogram=False,
-        name=beh_name,
+        name="video",
     )
+    ndw_main[beh_name].subplot.tooltip.enabled = False
+
+    videos[loc] = ndg_vid
+
+CURRENT_BURROW_SELECTION = "burrow"
+# burrow vid options
+@ndw_main["beh-burrow"].subplot.add_imgui_window(location="top", size=36, title=None)
+def burrow_vid_selection(subplot):
+    global CURRENT_BURROW_SELECTION
+    for i, option in enumerate(burrow_extras + ["burrow"]):
+        if imgui.radio_button(option, CURRENT_BURROW_SELECTION == option):
+            if option != CURRENT_BURROW_SELECTION:
+                ndw_main["beh-burrow"]["video"].data = movies[option]
+                CURRENT_BURROW_SELECTION = option
+                subplot.camera.zoom = 1.25
+        imgui.same_line()
+
+CURRENT_NEST_SELECTION = "nest"
+# nest vid options
+@ndw_main["beh-nest"].subplot.add_imgui_window(location="top", size=36, title=None)
+def nest_vid_selection():
+    global CURRENT_NEST_SELECTION
+    for i, option in enumerate(nest_extras + ["nest"]):
+        if imgui.radio_button(option, CURRENT_NEST_SELECTION == option):
+            if option != CURRENT_NEST_SELECTION:
+                ndw_main["beh-nest"]["video"].data = movies[option]
+                CURRENT_NEST_SELECTION = option
+                subplot.camera.zoom = 1.25
+        imgui.same_line()
 
 ndw_main.show()
 
@@ -238,24 +279,50 @@ spike_times = np.load(spike_times_path, allow_pickle=True)
 
 spikes_data = {i: nap.Ts(s / 25_000) for i, s in enumerate(spike_times)}
 spikes = nap.TsGroup(spikes_data, time_units="s")
-counts = spikes.count(bin_size=0.1, time_units="s")
-spike_counts = fpl.utils.heatmap_to_positions(counts.values.T, xvals=counts.t)
+
+offset = 100
+duration = 400
+ep = nap.IntervalSet(start=offset, end=offset + duration)
+
+counts = spikes.count(bin_size=0.1, time_units="s", ep=ep)
+spike_counts = fpl.utils.heatmap_to_positions(counts.values.T, xvals=counts.t - offset)
 
 spikes_ndg = ndw_ephys["spikes"].add_nd_timeseries(
     spike_counts,
     ("l", "time", "d"),
     ("l", "time", "d"),
     graphic_type=fpl.ImageGraphic,
-    slider_dim_transforms={"time": counts.t},
+    slider_dim_transforms={"time": counts.t - offset},
     x_range_mode="auto",
 )
+spikes_ndg.graphic.cmap = "gray_r"
 subplot = ndw_ephys["spikes"].subplot
 subplot.controller.add_camera(subplot.camera, include_state={"x", "width"})
+
+CURRENT_BIN_SIZE = 100
+@ndw_ephys["spikes"].subplot.add_imgui_window(location="top", size=36, title=None)
+def bin_size_ui(subplot):
+    global CURRENT_BIN_SIZE
+    changed, bin_size = imgui.input_int("bin size (ms)", v=CURRENT_BIN_SIZE, step=10, step_fast=50)
+    if changed:
+        if bin_size < 5:
+            bin_size = 5
+
+        cam_state = subplot.camera.get_state()
+
+        counts = spikes.count(bin_size=bin_size / 1_000, time_units="s", ep=ep)
+        spike_counts = fpl.utils.heatmap_to_positions(counts.values.T, xvals=counts.t - offset)
+        spikes_ndg.data = spike_counts
+        spikes_ndg.slider_dim_transforms = {"time": counts.t - offset}
+        spikes_ndg.cmap = "gray_r"
+        CURRENT_BIN_SIZE = bin_size
+
+        subplot.camera.set_state(cam_state)
 
 
 def spikes_tooltip_format(pick_info):
     col, row = pick_info["index"]
-    n_spikes = spikes_ndg.graphic.format_pick_info(pick_info)
+    n_spikes = int(spikes_ndg.graphic.format_pick_info(pick_info))
 
     return f"neuron: {row}\nspikes:{round(n_spikes)}"
 
@@ -263,6 +330,41 @@ spikes_ndg.graphic.tooltip_format = spikes_tooltip_format
 
 ndw_ephys.show()
 
+
+# ethogram, one row per behavior, columns are the behavior video frames
+eth_times = movies[location_order[0]].time
+ethogram = Ethogram(os.path.join(base_path, "ethogram.csv"), eth_times)
+
+ndw_eth = fpl.NDWidget(
+    ref_index=ndw_main.indices,
+    names=["ethogram"],
+    size=(1500, 400),
+)
+
+eth_manager = EthogramManager(
+    ndw_eth["ethogram"],
+    ethogram,
+    display_window=10.0,
+    x_range_mode="auto",
+    name="ethogram",
+)
+
+subplot = ndw_eth["ethogram"].subplot
+subplot.controller.add_camera(subplot.camera, include_state={"x", "width"})
+
+ndw_eth.show()
+
+# the entry UI is drawn in its own window
+editor = EthogramEditor(ethogram, eth_manager, device=ndw_main.figure.renderer.device)
+
+
+def video_double_click(ev):
+    col, row = ev.pick_info["index"]
+    editor.new_entry(row=int(row), col=int(col))
+
+
+for ndg_vid in videos.values():
+    ndg_vid.graphic.add_event_handler(video_double_click, "double_click")
 
 
 for subplot in ndw_main.figure:
