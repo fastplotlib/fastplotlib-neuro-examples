@@ -180,7 +180,7 @@ for loc in location_order:
     beh_names.append(f"beh-{loc}")
 
 ndw_main = fpl.NDWidget(
-    ref_ranges=ref_range,
+    ranges=ref_range,
     extents=extents,
     names=[*spec_names, *beh_names],
     size=(1500, 800),
@@ -203,7 +203,7 @@ for loc in location_order:
         ("l", "time", "d"),
         ("l", "time", "d"),
         display_window=5.0,
-        slider_dim_transforms={"time": t_spec},
+        slider_maps={"time": t_spec},
         graphic_type=fpl.ImageGraphic,
         name=spec_name,
         x_range_mode="auto",
@@ -231,8 +231,8 @@ for loc in location_order:
     ndg_vid = ndw_main[beh_name].add_video(
         vid,
         dims=("time", "m", "n"),
-        spatial_dims=("m", "n"),
-        slider_dim_transforms={"time": vid.time},
+        display_dims=("m", "n"),
+        slider_maps={"time": vid.time},
         compute_histogram=False,
         name="video",
     )
@@ -269,7 +269,7 @@ def nest_vid_selection():
 ndw_main.show()
 
 ndw_ephys = fpl.NDWidget(
-    ref_index=ndw_main.indices,
+    indices=ndw_main.indices,
     names=["spikes"],
     size=(1500, 400),
 )
@@ -292,7 +292,7 @@ spikes_ndg = ndw_ephys["spikes"].add_nd_timeseries(
     ("l", "time", "d"),
     ("l", "time", "d"),
     graphic_type=fpl.ImageGraphic,
-    slider_dim_transforms={"time": counts.t - offset},
+    slider_maps={"time": counts.t - offset},
     x_range_mode="auto",
 )
 spikes_ndg.graphic.cmap = "gray_r"
@@ -313,7 +313,7 @@ def bin_size_ui(subplot):
         counts = spikes.count(bin_size=bin_size / 1_000, time_units="s", ep=ep)
         spike_counts = fpl.utils.heatmap_to_positions(counts.values.T, xvals=counts.t - offset)
         spikes_ndg.data = spike_counts
-        spikes_ndg.slider_dim_transforms = {"time": counts.t - offset}
+        spikes_ndg.slider_maps = {"time": counts.t - offset}
         spikes_ndg.cmap = "gray_r"
         CURRENT_BIN_SIZE = bin_size
 
@@ -336,7 +336,7 @@ eth_times = movies[location_order[0]].time
 ethogram = Ethogram(os.path.join(base_path, "ethogram.csv"), eth_times)
 
 ndw_eth = fpl.NDWidget(
-    ref_index=ndw_main.indices,
+    indices=ndw_main.indices,
     names=["ethogram"],
     size=(1500, 400),
 )

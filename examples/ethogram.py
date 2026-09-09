@@ -176,7 +176,7 @@ class EthogramManager:
             ("l", dim, "d"),
             ("l", dim, "d"),
             graphic_type=fpl.ImageGraphic,
-            slider_dim_transforms={dim: ethogram.times},
+            slider_maps={dim: ethogram.times},
             **kwargs,
         )
 
